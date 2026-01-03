@@ -33,10 +33,15 @@ XORNG is a self-improving, modular AI orchestration system designed to enhance A
 │  Client with AI     │  XORNG Extensions │  Client without AI│
 │  (Copilot/Cursor)   │  (IDE/Shell Tools)│  (WebClient)      │
 └─────────────────────┴───────────────────┴───────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │  VS Code Extension │
+                    │  (IPC to Core)     │
+                    └───────────────────┘
 ```
 
 - **AI Clients**: VS Code with GitHub Copilot, Cursor, etc.
-- **XORNG Extensions**: IDE plugins, shell tools, ACP support
+- **XORNG Extensions**: IDE plugins (VS Code extension uses IPC), shell tools, ACP support
 - **Non-AI Clients**: Web interface for end users
 
 ### Layer 2: XORNG Core
@@ -112,12 +117,20 @@ XORNG is a self-improving, modular AI orchestration system designed to enhance A
 
 ## Request Flow
 
+### VS Code Extension (IPC Mode)
+
 ```
 User Prompt (VS Code/IDE)
          │
          ▼
+    ┌──────────────┐
+    │   VS Code    │  ← XORNG Extension
+    │   Extension  │
+    └──────┬───────┘
+           │ IPC (child_process.fork)
+           ▼
     ┌─────────┐
-    │ XORNG   │  ← Receives prompt like normal AI interaction
+    │ XORNG   │  ← Core runs as local child process
     │ Core    │
     └────┬────┘
          │
@@ -140,6 +153,36 @@ User Prompt (VS Code/IDE)
     │ Token   │  ← Track usage, store successful patterns
     │ Tracker │
     └─────────┘
+```
+
+> **Note**: In IPC mode, the VS Code extension proxies LLM requests from Core using the `vscode.lm` API, enabling access to GitHub Copilot models.
+
+### Standalone Mode (Manual)
+
+For development or non-VS Code use, Core can be run directly:
+
+```
+External Prompt (CLI/API)
+         │
+         ▼
+    ┌─────────┐
+    │ XORNG   │  ← Core runs standalone
+    │ Core    │  ← Requires own API keys
+    └────┬────┘
+         │
+         ▼
+┌─────────────────┐      ┌─────────────────┐
+│  Distributor /  │◄────►│  Memory System  │
+│  Aggregator     │      │  (Context +     │
+│                 │      │   Past Patterns)│
+└────────┬────────┘      └─────────────────┘
+         │
+    ┌────┴────┬──────────┬──────────┐
+    ▼         ▼          ▼          ▼
+┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
+│Valid. │ │Knowl. │ │ Task  │ │Unknown│
+│  xyz  │ │  xyz  │ │  xyz  │ │  xyz  │
+└───────┘ └───────┘ └───────┘ └───────┘
 ```
 
 ---
@@ -584,7 +627,7 @@ XORNG Organization
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **VS Code Extension** | ⏳ Planned | [extension-vscode/](../extension-vscode/) |
+| **VS Code Extension** | ✅ Implemented | [extension-vscode/](../extension-vscode/) - Auto-setup, IPC architecture |
 | **Shell Tool** | ⏳ Planned | CLI interface |
 | **Observability Dashboard** | ⏳ Planned | Token/cost tracking |
 
@@ -601,7 +644,7 @@ XORNG Organization
 - [x] Short-Term Memory operational (session context)
 - [x] Long-Term Memory operational (pattern storage)
 - [x] Token tracking hooks capturing usage data
-- [ ] Basic VS Code extension functional
+- [x] Basic VS Code extension functional (IPC-based with auto-setup)
 - [x] Human-in-the-loop approval for self-improvements (designed)
 - [x] GitHub Issue processing triggering improvements (designed)
 
@@ -624,6 +667,7 @@ XORNG Organization
 | Guide | Description |
 |-------|-------------|
 | **[Installation Guide](./INSTALLATION.md)** | Complete setup instructions for Docker, local, and cloud deployment |
+| **[VS Code Extension](./VSCODE_EXTENSION.md)** | Install and configure the XORNG VS Code extension for AI-assisted coding |
 | **[Node Configuration](./NODE_CONFIGURATION.md)** | Configure AI providers, model routing, and automatic GitHub development |
 | **[Automation Guide](./AUTOMATION.md)** | Self-improvement pipelines, GitHub integration, and human-in-the-loop approval |
 | **[Validation Guide](./VALIDATION.md)** | Sub-agent validation requirements and testing procedures |
@@ -649,7 +693,21 @@ node --version    # 20.0+
 gh --version      # GitHub CLI for automation
 ```
 
-### Quick Install
+### Quick Install (Recommended: VS Code Extension)
+
+The easiest way to get started:
+
+1. Install the **XORNG** extension from VS Code Marketplace
+2. The extension automatically:
+   - Clones all required XORNG repositories
+   - Installs dependencies  
+   - Builds components
+   - Starts Core as a local process via IPC
+3. Use XORNG commands from the command palette
+
+See [VS Code Extension Guide](./VSCODE_EXTENSION.md) for details.
+
+### Docker Quick Start
 
 ```bash
 # Clone XORNG

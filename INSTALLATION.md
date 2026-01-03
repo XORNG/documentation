@@ -2,6 +2,25 @@
 
 Complete guide for installing and running XORNG locally for development and production use.
 
+## Quick Start: VS Code Extension (Recommended)
+
+The easiest way to use XORNG is through the **VS Code Extension**, which automatically handles all setup:
+
+1. Install the XORNG extension from VS Code Marketplace
+2. The extension automatically:
+   - Clones XORNG repositories
+   - Installs dependencies
+   - Builds components
+   - Starts Core as a local process
+
+No manual installation required! See [VS Code Extension Guide](./VSCODE_EXTENSION.md) for details.
+
+---
+
+## Manual Installation (Development/Advanced)
+
+For developers who want to work on XORNG components directly or run without VS Code.
+
 ## Prerequisites
 
 ### Required Software
@@ -9,7 +28,7 @@ Complete guide for installing and running XORNG locally for development and prod
 | Software | Version | Purpose |
 |----------|---------|---------|
 | **Node.js** | 20.0.0+ | Runtime for XORNG components |
-| **Docker** | 24.0.0+ | Container isolation for sub-agents |
+| **Docker** | 24.0.0+ | Container isolation for sub-agents (optional) |
 | **pnpm** | 8.0.0+ | Package manager (recommended) |
 | **Git** | 2.40.0+ | Version control |
 
@@ -20,7 +39,7 @@ Complete guide for installing and running XORNG locally for development and prod
 | **Redis** | Memory system caching |
 | **Qdrant** | Vector database for semantic search |
 
-## Quick Start
+## Manual Setup
 
 ### 1. Clone Repositories
 
@@ -101,10 +120,12 @@ cd ~/xorng/knowledge-best-practices && npm run build
 cd ~/xorng/automation && npm run build
 ```
 
-### 5. Start XORNG
+### 5. Start XORNG (Manual Development Mode)
+
+When running XORNG manually for development (not using the VS Code extension):
 
 ```bash
-# Start the core orchestrator
+# Start the core as IPC handler (for development/testing)
 cd ~/xorng/core
 npm start
 
@@ -112,6 +133,8 @@ npm start
 cd ~/xorng/automation
 npm start
 ```
+
+> **Note:** When using the VS Code extension, Core is automatically started as a child process via IPC. Manual startup is only needed for standalone development or testing.
 
 ---
 
@@ -315,28 +338,54 @@ npm link @xorng/template-base
 
 ## VS Code Extension Setup
 
-### Install Extension
+The XORNG VS Code Extension provides AI orchestration directly in your editor with GitHub Copilot, Claude, OpenAI, and local model support.
+
+### Quick Install
 
 ```bash
-# From VS Code marketplace (when available)
-code --install-extension xorng.xorng-assistant
+# From VS Code Marketplace (when available)
+code --install-extension xorng.xorng-vscode
 
-# Or install from VSIX
-code --install-extension ./extensions/xorng-assistant-0.1.0.vsix
+# Or build and install from source
+cd ~/xorng/extension-vscode
+npm install
+npm run build
+npm run package
+code --install-extension xorng-vscode-0.1.0.vsix
 ```
 
-### Configure Extension
+### Quick Configuration
 
-Add to VS Code settings (`.vscode/settings.json`):
+Add to VS Code settings (`Ctrl+,`):
 
 ```json
 {
-  "xorng.serverUrl": "http://localhost:3000",
-  "xorng.autoStart": true,
-  "xorng.logLevel": "info",
-  "xorng.enableTelemetry": true
+  // Use GitHub Copilot (recommended)
+  "xorng.provider": "copilot",
+  "xorng.copilot.modelFamily": "gpt-4o",
+  
+  // Or use native providers
+  // "xorng.provider": "native",
+  // "xorng.native.provider": "openai",
+  // "xorng.native.apiKey": "sk-your-key",
+  
+  // Enable sub-agents
+  "xorng.subAgents.enabled": true
 }
 ```
+
+### Usage
+
+Use `@xorng` in VS Code Chat:
+
+```
+@xorng Review this code for issues
+@xorng /security Analyze for vulnerabilities  
+@xorng /explain What does this function do?
+@xorng /refactor Suggest improvements
+```
+
+📖 **See [VS Code Extension Guide](./VSCODE_EXTENSION.md) for complete installation, configuration, and troubleshooting.**
 
 ---
 
@@ -391,6 +440,7 @@ LOG_LEVEL=debug npm start
 
 ## Next Steps
 
+- [VS Code Extension Guide](./VSCODE_EXTENSION.md) - Complete extension setup
 - [Node Configuration](./NODE_CONFIGURATION.md) - Configure AI providers
 - [Automation Guide](./AUTOMATION.md) - Set up self-improvement
 - [Creating Sub-Agents](./CREATING_SUBAGENTS.md) - Build custom sub-agents
