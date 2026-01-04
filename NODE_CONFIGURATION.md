@@ -477,7 +477,7 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 
 # GitHub for self-improvement
 GITHUB_TOKEN=ghp_your-github-token
-GITHUB_ORG=XORNG
+GH_ORG=XORNG
 
 # Local model (optional)
 OLLAMA_HOST=http://localhost:11434

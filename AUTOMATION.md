@@ -91,7 +91,7 @@ Add these secrets to your GitHub repository (Settings → Secrets → Actions):
 | `VSERVER_PORT` | SSH port (default: 22) |
 | `GH_AUTOMATION_TOKEN` | GitHub token with `repo` and `admin:org` scopes |
 | `WEBHOOK_SECRET` | Random secret for webhook verification |
-| `GITHUB_ORG` | Your GitHub organization name (e.g., `XORNG`) |
+| `GH_ORG` | Your GitHub organization name (e.g., `XORNG`) |
 
 **For domain + automatic HTTPS (recommended):**
 
@@ -285,7 +285,7 @@ await fetch('https://xorng.yourdomain.com/api/feedback', {
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GITHUB_TOKEN` | Yes | - | GitHub token with repo/org permissions |
-| `GITHUB_ORG` | No | `XORNG` | GitHub organization name |
+| `GH_ORG` | No | `XORNG` | GitHub organization name |
 | `WEBHOOK_SECRET` | No | - | Secret for webhook signature verification |
 | `WEBHOOK_URL` | No | - | Public URL for webhook callbacks |
 | `PORT` | No | `3000` | Server port |
@@ -306,7 +306,7 @@ npm install
 
 # Set environment variables
 export GITHUB_TOKEN=ghp_your_token
-export GITHUB_ORG=XORNG
+export GH_ORG=XORNG
 export WEBHOOK_SECRET=your_secret
 
 # Start development server
@@ -353,7 +353,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -e GITHUB_TOKEN="your_token" \
-  -e GITHUB_ORG="XORNG" \
+  -e GH_ORG="XORNG" \
   -e WEBHOOK_SECRET="your_secret" \
   xorng-automation
 ```
@@ -370,7 +370,7 @@ services:
       - "3000:3000"
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - GITHUB_ORG=${GITHUB_ORG}
+      - GH_ORG=${GH_ORG}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
     restart: unless-stopped
 ```
