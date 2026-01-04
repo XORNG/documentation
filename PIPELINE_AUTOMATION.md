@@ -258,9 +258,9 @@ AI_MAX_RETRY_DELAY_MS=120000   # Maximum delay between retries in ms (default: 1
 
 # Optional - AI Model Configuration
 OPENROUTER_MODEL=mistralai/devstral-2512:free  # Primary model (default: mistralai/devstral-2512:free - FREE)
-AI_FALLBACK_MODELS=xiaomi/mimo-v2-flash:free,kwaipilot/kat-coder-pro:free,tngtech/deepseek-r1t2-chimera:free
-# Comma-separated list of fallback models. OpenRouter will automatically try the next model
-# if the primary model fails (provider issues, rate limits, etc.)
+AI_FALLBACK_MODELS=xiaomi/mimo-v2-flash:free,kwaipilot/kat-coder-pro:free
+# Comma-separated list of fallback models (max 2 - OpenRouter limits to 3 total)
+# OpenRouter will automatically try the next model if the primary fails
 # All defaults are FREE models ($0/token) - no cost for primary or fallbacks
 
 # Optional - General
@@ -280,8 +280,8 @@ OpenRouter's `models` array feature enables automatic failover when the primary 
 - **Default Fallbacks**: If not configured, uses FREE built-in fallbacks:
   - `xiaomi/mimo-v2-flash:free` - MiMo-V2 MoE model, #1 on SWE-bench (256K context)
   - `kwaipilot/kat-coder-pro:free` - KAT-Coder-Pro, optimized for coding tasks
-  - `tngtech/deepseek-r1t2-chimera:free` - DeepSeek R1T2 Chimera, strong reasoning
-  - `nvidia/nemotron-3-nano-30b-a3b:free` - NVIDIA Nemotron, efficient agentic AI
+  
+  > **Note**: OpenRouter limits the `models` array to 3 items max (1 primary + 2 fallbacks)
 
 This addresses upstream provider failures (500 errors) without requiring local retry logic for model-level issues.
 
