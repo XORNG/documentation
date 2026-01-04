@@ -7,297 +7,514 @@ Configure XORNG's self-improvement system for automatic codebase enhancements, i
 XORNG's automation system enables:
 
 - **Self-Improvement** - Automatic code enhancements based on feedback
-- **Issue Resolution** - Auto-fix bugs from GitHub issues
+- **Issue Resolution** - Auto-process issues from all GitHub repositories
 - **Continuous Learning** - Store successful patterns in long-term memory
 - **Human-in-the-Loop** - Approval gates for safe deployment
+- **VS Code Feedback Loop** - Real-time feedback from extension users
+- **Automatic Deployment** - Zero-maintenance server deployment via GitHub Actions
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    XORNG AUTOMATION SYSTEM                          │
-│                                                                     │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐          │
-│  │   INPUTS     │    │  PROCESSING  │    │   OUTPUTS    │          │
-│  ├──────────────┤    ├──────────────┤    ├──────────────┤          │
-│  │ GitHub Issues│───▶│ AI Analysis  │───▶│ Pull Request │          │
-│  │ Error Logs   │───▶│ Validation   │───▶│ Config Update│          │
-│  │ Token Metrics│───▶│ Human Review │───▶│ New Sub-Agent│          │
-│  │ Telemetry    │───▶│ Testing      │───▶│ Documentation│          │
-│  └──────────────┘    └──────────────┘    └──────────────┘          │
-│                              │                                      │
-│                              ▼                                      │
-│                    ┌──────────────────┐                            │
-│                    │  Long-Term Memory │                            │
-│                    │  (Pattern Storage)│                            │
-│                    └──────────────────┘                            │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      XORNG AUTOMATION SYSTEM                            │
+│                                                                         │
+│  ┌────────────────────────────────────────────────────────────────┐    │
+│  │                    WEBHOOK SERVER (VServer)                     │    │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │    │
+│  │  │   GitHub     │  │  VS Code     │  │   Feedback   │          │    │
+│  │  │   Webhooks   │  │  Extension   │  │   Service    │          │    │
+│  │  │   (all repos)│  │  Endpoints   │  │              │          │    │
+│  │  └──────┬───────┘  └──────┬───────┘  └──────────────┘          │    │
+│  │         │                 │                                     │    │
+│  │         ▼                 ▼                                     │    │
+│  │  ┌─────────────────────────────────────────────────────────┐   │    │
+│  │  │              Issue Processor (All Issues)               │   │    │
+│  │  │  - No label filtering (testing phase)                   │   │    │
+│  │  │  - All repositories in organization                     │   │    │
+│  │  │  - Auto-discovers new repositories                      │   │    │
+│  │  └─────────────────────────────────────────────────────────┘   │    │
+│  └────────────────────────────────────────────────────────────────┘    │
+│                              │                                          │
+│                              ▼                                          │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
+│  │   INPUTS     │    │  PROCESSING  │    │   OUTPUTS    │              │
+│  ├──────────────┤    ├──────────────┤    ├──────────────┤              │
+│  │ All Issues   │───▶│ AI Analysis  │───▶│ Pull Request │              │
+│  │ Error Logs   │───▶│ Validation   │───▶│ Config Update│              │
+│  │ VS Code Data │───▶│ Human Review │───▶│ New Sub-Agent│              │
+│  │ Telemetry    │───▶│ Testing      │───▶│ Documentation│              │
+│  └──────────────┘    └──────────────┘    └──────────────┘              │
+│                              │                                          │
+│                              ▼                                          │
+│                    ┌──────────────────┐                                │
+│                    │  Long-Term Memory │                                │
+│                    │  (Pattern Storage)│                                │
+│                    └──────────────────┘                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+                     Automatic Deployment via GitHub Actions
+                     ┌─────────────────────────────────────┐
+                     │ Push to main → Build → Deploy → Run │
+                     │ Daily auto-update checks            │
+                     │ Zero maintenance required           │
+                     └─────────────────────────────────────┘
 ```
 
 ---
 
 ## Quick Start
 
-### 1. Configure automation.yaml
+### 1. VServer Setup (One-Time)
 
-```yaml
-# automation.yaml
-version: "1.0"
-
-# Enable the automation system
-enabled: true
-
-# GitHub Integration
-github:
-  token: ${GITHUB_TOKEN}
-  organization: XORNG
-  
-# AI Provider for automation tasks
-provider:
-  name: anthropic
-  model: claude-sonnet-4-20250514
-
-# Human approval settings
-approval:
-  required: true
-  auto_merge_after_approval: true
-```
-
-### 2. Set Environment Variables
+Run the setup script on your Debian VServer:
 
 ```bash
-# .env
-GITHUB_TOKEN=ghp_your-github-token
-ANTHROPIC_API_KEY=sk-ant-your-key
+# Download and run setup script
+curl -fsSL https://raw.githubusercontent.com/XORNG/automation/main/scripts/vserver-setup.sh | sudo bash
 ```
 
-### 3. Start Automation Service
+This installs Docker, creates the deploy user, and configures the firewall.
+**This is the ONLY manual step on the server** - everything else is automated!
+
+### 2. Configure GitHub Secrets
+
+Add these secrets to your GitHub repository (Settings → Secrets → Actions):
+
+| Secret | Description |
+|--------|-------------|
+| `VSERVER_HOST` | Your VServer IP or hostname |
+| `VSERVER_USER` | `deploy` (created by setup script) |
+| `VSERVER_SSH_KEY` | SSH private key for deployment |
+| `VSERVER_PORT` | SSH port (default: 22) |
+| `GH_AUTOMATION_TOKEN` | GitHub token with `repo` and `admin:org` scopes |
+| `WEBHOOK_SECRET` | Random secret for webhook verification |
+| `GITHUB_ORG` | Your GitHub organization name (e.g., `XORNG`) |
+
+**For domain + automatic HTTPS (recommended):**
+
+| Secret | Description |
+|--------|-------------|
+| `AUTOMATION_DOMAIN` | Your domain (e.g., `automation.yourdomain.com`) |
+| `ACME_EMAIL` | Email for Let's Encrypt notifications (optional) |
+
+> **Note:** If `AUTOMATION_DOMAIN` is set, GitHub Actions will automatically:
+> - Deploy Traefik as a reverse proxy
+> - Provision SSL certificates via Let's Encrypt  
+> - Configure HTTP → HTTPS redirect
+> - Route traffic to the automation server
+>
+> **You don't need to install or configure anything on the server!**
+
+### 3. Generate SSH Keys
 
 ```bash
-cd ~/xorng/automation
-npm start
+# On your local machine
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/xorng-deploy
+
+# Copy public key to VServer
+ssh-copy-id -i ~/.ssh/xorng-deploy.pub deploy@YOUR_VSERVER_IP
+
+# Add private key content to GitHub secret VSERVER_SSH_KEY
+cat ~/.ssh/xorng-deploy
+```
+
+### 4. Point DNS (if using domain)
+
+Point your domain's A record to your VServer IP:
+```
+automation.yourdomain.com  →  A  →  YOUR_VSERVER_IP
+```
+
+### 5. Deploy
+
+Push to the `main` branch of the automation repository - deployment happens automatically!
+
+```bash
+git push origin main
+# GitHub Actions will build, push, and deploy automatically
 ```
 
 ---
 
-## Input Sources
+## Web Service Endpoints
 
-### GitHub Issues
+### Health Check
 
-XORNG monitors GitHub issues across configured repositories:
-
-```yaml
-# automation.yaml
-github:
-  token: ${GITHUB_TOKEN}
-  organization: XORNG
-  
-  # Repositories to monitor
-  repositories:
-    - name: core
-      enabled: true
-    - name: node
-      enabled: true
-    - name: validator-code-review
-      enabled: true
-    - name: validator-security
-      enabled: true
-    - name: knowledge-documentation
-      enabled: true
-    - name: knowledge-best-practices
-      enabled: true
-      
-  # Issue labels that trigger automation
-  trigger_labels:
-    - auto-improvement    # General improvements
-    - bug                 # Bug fixes
-    - enhancement         # Feature requests
-    - performance         # Optimization
-    - security            # Security fixes
-    - documentation       # Doc updates
-    
-  # Labels to ignore
-  ignore_labels:
-    - wontfix
-    - duplicate
-    - manual-only
+```bash
+GET /health
+# Returns: { "status": "healthy", "timestamp": "...", "uptime": 123 }
 ```
 
-### Error Telemetry
+### Status
 
-Collect and analyze errors from running systems:
-
-```yaml
-# automation.yaml
-telemetry:
-  enabled: true
-  
-  # Error collection
-  errors:
-    # Minimum occurrences before triggering improvement
-    threshold: 5
-    
-    # Time window for counting
-    window_hours: 24
-    
-    # Error categories to monitor
-    categories:
-      - runtime_error
-      - type_error
-      - validation_error
-      - timeout
-      - memory_leak
-      
-  # Where to store telemetry
-  storage:
-    type: redis
-    url: ${REDIS_URL}
-    retention_days: 30
+```bash
+GET /status
+# Returns detailed server status including version and memory usage
 ```
 
-### Token Usage Metrics
+### GitHub Webhook
 
-Optimize based on token consumption patterns:
-
-```yaml
-# automation.yaml
-metrics:
-  tokens:
-    # Track usage per sub-agent
-    per_agent: true
-    
-    # Track usage per task type
-    per_task: true
-    
-    # Trigger optimization when usage exceeds threshold
-    optimization_threshold: 0.8  # 80% of budget
-    
-  # Metrics collection endpoint
-  endpoint:
-    type: prometheus
-    port: 9090
+```bash
+POST /webhook/github
+# Receives all GitHub webhook events
+# Automatically processes issues and PRs from ALL repositories
 ```
 
-### Performance Metrics
+### VS Code Extension Feedback
 
-Monitor and improve performance:
+```bash
+# Submit feedback
+POST /api/feedback
+Content-Type: application/json
 
-```yaml
-# automation.yaml
-metrics:
-  performance:
-    # Track response times
-    response_time:
-      target_p50_ms: 500
-      target_p99_ms: 2000
-      
-    # Track success rates
-    success_rate:
-      target: 0.95
-      
-    # Trigger improvements when targets missed
-    auto_improve: true
+{
+  "type": "improvement-accepted",
+  "extensionVersion": "1.0.0",
+  "data": {
+    "message": "AI suggestion was helpful",
+    "rating": 5,
+    "file": "src/index.ts"
+  }
+}
+
+# Submit telemetry
+POST /api/telemetry
+Content-Type: application/json
+
+{
+  "metrics": [...],
+  "events": [...],
+  "extensionVersion": "1.0.0"
+}
+
+# Get pending tasks (for VS Code extension)
+GET /api/pending-tasks?workspaceId=xxx&capabilities=review,security
+
+# Submit task result
+POST /api/task/:taskId/result
+Content-Type: application/json
+
+{
+  "status": "completed",
+  "result": { ... }
+}
 ```
 
 ---
 
-## Processing Pipeline
+## Key Features
 
-### Issue Processing Workflow
+### Automatic Repository Discovery
 
-```yaml
-# automation.yaml
-workflows:
-  issue_processing:
-    enabled: true
-    
-    steps:
-      # Step 1: Analyze the issue
-      - name: analyze
-        action: analyze_issue
-        provider: anthropic
-        model: claude-sonnet-4-20250514
-        prompts:
-          system: |
-            You are analyzing a GitHub issue for the XORNG project.
-            Determine the type of change needed, affected files, and complexity.
-          user: |
-            Issue Title: {{issue.title}}
-            Issue Body: {{issue.body}}
-            Labels: {{issue.labels}}
-            Repository: {{issue.repository}}
-        outputs:
-          - change_type      # bug_fix | enhancement | refactor | docs
-          - affected_files   # List of files to modify
-          - complexity       # low | medium | high
-          - implementation_plan
-          
-      # Step 2: Generate implementation
-      - name: implement
-        action: generate_code
-        provider: anthropic
-        model: claude-sonnet-4-20250514
-        condition: analysis.complexity != "high"
-        inputs:
-          - analysis.implementation_plan
-          - analysis.affected_files
-        outputs:
-          - code_changes     # Map of file -> changes
-          - tests            # New/modified tests
-          
-      # Step 3: Validate changes
-      - name: validate
-        action: run_validation
-        steps:
-          - lint: eslint
-          - typecheck: tsc
-          - test: vitest
-          - security: validator-security
-        fail_on_error: true
-        
-      # Step 4: Self-review
-      - name: review
-        action: code_review
-        provider: anthropic
-        model: claude-sonnet-4-20250514
-        inputs:
-          - code_changes
-          - test_results
-        outputs:
-          - review_passed    # boolean
-          - review_comments  # List of comments
-          - confidence       # 0-100
-          
-      # Step 5: Create PR (if review passed)
-      - name: submit
-        action: create_pull_request
-        condition: review.review_passed AND review.confidence > 80
-        inputs:
-          - code_changes
-          - review_comments
-        config:
-          branch_prefix: xorng/auto
-          require_approval: true
-          labels:
-            - auto-generated
-            - needs-review
+**No manual repository configuration required!**
+
+The server automatically:
+- Discovers all repositories in your GitHub organization
+- Registers webhooks for new repositories
+- Processes issues from any repository
+
+```typescript
+// Internally uses GitHubOrgService
+const repos = await githubOrgService.listRepositories();
+// Returns ALL repos in the organization
 ```
 
-### Error-Driven Improvement
+### Process All Issues (Testing Phase)
+
+**No label filtering - all issues are processed!**
+
+During the testing phase, all issues trigger automation:
+
+```typescript
+// IssueProcessor processes ALL issues
+// No label checks - will add filtering later when ready
+await issueProcessor.processIssueEvent({
+  action: 'opened',
+  issue: { ... },  // Any issue, any labels
+  repository: { ... }
+});
+```
+
+Future filtering can be added when needed:
 
 ```yaml
-# automation.yaml
-workflows:
-  error_improvement:
-    enabled: true
+# Future: automation.yaml configuration
+filtering:
+  enabled: false  # Currently disabled for testing
+  labels:
+    include: ['auto-improvement', 'bug']
+    exclude: ['wontfix', 'duplicate']
+```
+
+### VS Code Extension Feedback Loop
+
+The server provides endpoints for the VS Code extension to:
+- Submit user feedback on AI suggestions
+- Report errors and issues
+- Receive pending tasks for processing
+- Submit task results
+
+```typescript
+// VS Code extension can submit feedback
+await fetch('https://xorng.yourdomain.com/api/feedback', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    type: 'improvement-accepted',
+    data: { rating: 5, message: 'Great suggestion!' }
+  })
+});
+```
+
+### Automatic Deployment
+
+**Zero maintenance deployment via GitHub Actions!**
+
+- **On Push**: Any push to `main` triggers automatic deployment
+- **Daily Updates**: Automatic update checks run daily at 3 AM UTC
+- **Health Monitoring**: Deployment verifies server health before completing
+- **Rollback Ready**: Previous images are retained for quick rollback
+
+---
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GITHUB_TOKEN` | Yes | - | GitHub token with repo/org permissions |
+| `GITHUB_ORG` | No | `XORNG` | GitHub organization name |
+| `WEBHOOK_SECRET` | No | - | Secret for webhook signature verification |
+| `WEBHOOK_URL` | No | - | Public URL for webhook callbacks |
+| `PORT` | No | `3000` | Server port |
+| `HOST` | No | `0.0.0.0` | Server host |
+| `LOG_LEVEL` | No | `info` | Log level (debug, info, warn, error) |
+
+---
+
+## Local Development
+
+### Running Locally
+
+```bash
+cd automation
+
+# Install dependencies
+npm install
+
+# Set environment variables
+export GITHUB_TOKEN=ghp_your_token
+export GITHUB_ORG=XORNG
+export WEBHOOK_SECRET=your_secret
+
+# Start development server
+npm run dev:server
+```
+
+### Testing Webhooks Locally
+
+Use [ngrok](https://ngrok.com/) to expose local server:
+
+```bash
+# Terminal 1: Start server
+npm run dev:server
+
+# Terminal 2: Start ngrok tunnel
+ngrok http 3000
+
+# Configure GitHub webhook to point to ngrok URL
+# https://abc123.ngrok.io/webhook/github
+```
+
+---
+
+## Deployment Options
+
+### Option 1: GitHub Actions (Recommended)
+
+Fully automated deployment - just push to main!
+
+```yaml
+# .github/workflows/deploy-automation.yml
+# Already configured - see automation/.github/workflows/
+```
+
+### Option 2: Manual Docker
+
+```bash
+# Build image
+docker build -t xorng-automation ./automation
+
+# Run container
+docker run -d \
+  --name xorng-automation \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -e GITHUB_TOKEN="your_token" \
+  -e GITHUB_ORG="XORNG" \
+  -e WEBHOOK_SECRET="your_secret" \
+  xorng-automation
+```
+
+### Option 3: Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  xorng-automation:
+    build: ./automation
+    ports:
+      - "3000:3000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_ORG=${GITHUB_ORG}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    restart: unless-stopped
+```
+
+---
+
+## Domain & HTTPS (Automatic via Docker Compose)
+
+When you configure the `AUTOMATION_DOMAIN` secret, the deployment uses Docker Compose profiles to automatically include Traefik:
+
+### How it works
+
+The `docker-compose.yml` includes Traefik as an optional service using Docker Compose profiles:
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.2
+    profiles:
+      - with-domain  # Only starts when this profile is active
+    command:
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      # ... automatic SSL configuration
     
-    trigger:
-      type: error_threshold
-      threshold: 5
-      window_hours: 24
-      
+  automation-server:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.automation.rule=Host(`${AUTOMATION_DOMAIN}`)"
+      - "traefik.http.routers.automation.tls.certresolver=letsencrypt"
+```
+
+**Deployment modes:**
+
+| `AUTOMATION_DOMAIN` | Command | Result |
+|---------------------|---------|--------|
+| Set | `docker compose --profile with-domain up -d` | Traefik + SSL |
+| Not set | `docker compose up -d automation-server redis` | Direct port 3001 |
+
+### Traffic flow with domain
+
+```
+Internet → :443 → Traefik → automation-server:3000
+              ↑
+        Let's Encrypt
+        (automatic SSL)
+```
+
+### Without a domain
+
+If `AUTOMATION_DOMAIN` is not set:
+- Port 3001 is exposed directly
+- No HTTPS (use a separate proxy if needed)
+- Set `WEBHOOK_URL` manually in secrets
+
+---
+
+## Monitoring
+
+### View Logs
+
+```bash
+# SSH into VServer
+ssh deploy@YOUR_VSERVER_IP
+cd /opt/xorng
+
+# View all logs
+docker compose logs -f
+
+# View specific service
+docker compose logs -f automation-server
+
+# View last 100 lines
+docker compose logs --tail 100 automation-server
+```
+
+### Check Status
+
+```bash
+# All services
+docker compose ps
+
+# Health check (HTTPS with domain)
+curl https://automation.yourdomain.com/health
+
+# Health check (direct access)
+curl http://YOUR_VSERVER_IP:3001/health
+```
+
+---
+
+## Troubleshooting
+
+### Server not starting
+
+```bash
+# Check Docker status
+docker ps -a
+
+# Check container logs
+docker logs xorng-automation
+
+# Restart container
+docker restart xorng-automation
+```
+
+### Webhooks not received
+
+1. Check webhook secret matches
+2. Verify webhook URL is accessible
+3. Check GitHub webhook delivery logs
+4. Ensure firewall allows port 3000
+
+### Deployment fails
+
+1. Check GitHub Actions logs
+2. Verify SSH key is correct
+3. Ensure Docker is running on VServer
+4. Check available disk space
+
+---
+
+## Best Practices
+
+### Security
+
+1. Always use HTTPS in production (Caddy handles this automatically)
+2. Use strong webhook secrets
+3. Rotate GitHub tokens periodically
+4. Keep the VServer updated
+
+### Maintenance
+
+1. Monitor disk space for Docker images
+2. Review logs periodically
+3. Update dependencies regularly
+4. Test deployments in staging first
+
+---
+
+## Next Steps
+
+- [Installation Guide](./INSTALLATION.md) - Complete setup
+- [VS Code Extension](./VSCODE_EXTENSION.md) - Configure the extension
+- [Node Configuration](./NODE_CONFIGURATION.md) - Configure AI providers
     steps:
       - name: analyze_errors
         action: analyze_error_pattern
