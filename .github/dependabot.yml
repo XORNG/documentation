@@ -1,0 +1,15 @@
+# Dependabot Configuration for XORNG Documentation
+# Automatically creates PRs to keep dependencies up-to-date
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"

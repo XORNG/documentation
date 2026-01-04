@@ -100,6 +100,13 @@ Add these secrets to your GitHub repository (Settings → Secrets → Actions):
 | `AUTOMATION_DOMAIN` | Your domain (e.g., `automation.yourdomain.com`) |
 | `ACME_EMAIL` | Email for Let's Encrypt notifications (optional) |
 
+**For AI-powered features (OpenRouter):**
+
+| Secret | Description |
+|--------|-------------|
+| `OPENROUTER_API_KEY` | Your OpenRouter API key (get one at [openrouter.ai/keys](https://openrouter.ai/keys)) |
+| `OPENROUTER_MODEL` | Model to use (default: `anthropic/claude-sonnet-4`) |
+
 > **Note:** If `AUTOMATION_DOMAIN` is set, GitHub Actions will automatically:
 > - Deploy Traefik as a reverse proxy
 > - Provision SSL certificates via Let's Encrypt  
@@ -291,6 +298,172 @@ await fetch('https://xorng.yourdomain.com/api/feedback', {
 | `PORT` | No | `3000` | Server port |
 | `HOST` | No | `0.0.0.0` | Server host |
 | `LOG_LEVEL` | No | `info` | Log level (debug, info, warn, error) |
+| `OPENROUTER_API_KEY` | No | - | OpenRouter API key for AI features |
+| `OPENROUTER_MODEL` | No | `anthropic/claude-sonnet-4` | AI model to use |
+
+### Queue & Persistence Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REDIS_URL` | No | `redis://localhost:6379` | Redis connection URL for BullMQ |
+| `QUEUE_ENABLED` | No | `true` | Enable persistent job queue |
+| `QUEUE_CONCURRENCY` | No | `5` | Number of concurrent job workers |
+| `QUEUE_ATTEMPTS` | No | `3` | Max retry attempts for failed jobs |
+| `QUEUE_RATE_LIMIT_MAX` | No | `100` | Max jobs per rate limit window |
+| `QUEUE_RATE_LIMIT_DURATION` | No | `60000` | Rate limit window in milliseconds |
+
+### Observability Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `METRICS_ENABLED` | No | `true` | Enable Prometheus metrics endpoint |
+
+---
+
+## Resilience & Observability
+
+### Persistent Job Queue (BullMQ)
+
+The automation server uses BullMQ with Redis for persistent job processing. This ensures jobs survive server restarts and enables reliable delivery.
+
+**Features:**
+- Job persistence across server restarts
+- Automatic retries with exponential backoff
+- Rate limiting to prevent API exhaustion
+- Priority queues for urgent tasks
+- Dead-letter queue for failed jobs
+
+**Job Types:**
+- `issue` - Process GitHub issues
+- `pull_request` - Process pull requests
+- `feedback` - Process user feedback
+
+### Circuit Breaker Pattern
+
+External API calls (GitHub, OpenRouter) are protected by circuit breakers to prevent cascade failures:
+
+```typescript
+// Circuit breaker configuration
+const breaker = new CircuitBreaker('github-api', {
+  failureThreshold: 5,      // Open after 5 failures
+  resetTimeout: 60000,      // Try again after 60s
+  halfOpenRequests: 3,      // Test with 3 requests
+  timeout: 30000,           // Request timeout
+});
+```
+
+**States:**
+- `closed` - Normal operation, requests pass through
+- `open` - Circuit tripped, requests rejected immediately
+- `half-open` - Testing if service recovered
+
+### Prometheus Metrics
+
+Metrics are exposed at `/metrics` in Prometheus format:
+
+```bash
+GET /metrics
+# Returns Prometheus metrics
+```
+
+**Available Metrics:**
+- `xorng_issues_processed_total` - Issues processed by status
+- `xorng_ai_requests_total` - AI API calls by model and status
+- `xorng_ai_request_duration_seconds` - AI request latency
+- `xorng_http_requests_total` - HTTP requests by method, path, status
+- `xorng_http_request_duration_seconds` - HTTP request latency
+- `xorng_webhooks_received_total` - Webhooks by type and status
+- `xorng_webhook_duration_seconds` - Webhook processing time
+- `xorng_circuit_breaker_state` - Circuit breaker state (0=closed, 1=open, 2=half-open)
+- `xorng_queue_depth` - Job queue depth by state
+- `xorng_services_active` - Active service count
+
+### Graceful Shutdown
+
+The server handles shutdown signals gracefully:
+
+1. Stops accepting new requests
+2. Drains active jobs (30s timeout)
+3. Closes queue connections
+4. Exits cleanly
+
+```bash
+# Graceful shutdown
+kill -SIGTERM <pid>
+# or
+docker stop <container>
+```
+
+---
+
+## AI-Powered Features (OpenRouter Integration)
+
+> **⚠️ TEMPORARY SOLUTION**: The OpenRouter API key is currently configured via GitHub Secrets and passed to the automation server as environment variables. This is suitable for initial deployment and testing. For production use, consider migrating to a dedicated secrets management solution like HashiCorp Vault or AWS Secrets Manager.
+
+### Setting Up OpenRouter
+
+1. **Get an API Key**
+   - Go to [openrouter.ai/keys](https://openrouter.ai/keys)
+   - Create a new API key
+   - Give it a descriptive name (e.g., "XORNG Automation")
+   - Optionally set a credit limit
+
+2. **Add GitHub Secrets**
+   - Go to your repository → Settings → Secrets → Actions
+   - Add `OPENROUTER_API_KEY` with your API key
+   - Optionally add `OPENROUTER_MODEL` to override the default model
+
+3. **Deploy**
+   - Push to `main` to trigger deployment
+   - The server will automatically use the OpenRouter configuration
+
+### Supported Models
+
+OpenRouter provides access to many AI models. Popular options include:
+
+| Model ID | Description | Best For |
+|----------|-------------|----------|
+| `anthropic/claude-sonnet-4` | Default, excellent balance | General use, code review |
+| `anthropic/claude-3.5-sonnet` | Fast responses | Quick reviews |
+| `openai/gpt-4o` | OpenAI's latest | Complex analysis |
+| `google/gemini-2.0-flash-001` | Fast and cost-effective | High volume |
+
+See [openrouter.ai/models](https://openrouter.ai/models) for the full list.
+
+### AI Features
+
+When OpenRouter is configured, the automation gains:
+
+#### Issue Analysis
+- Automatic categorization (bug, feature, enhancement, etc.)
+- Priority assessment
+- Suggested labels
+- Implementation suggestions with code snippets
+- Complexity estimation
+
+#### Pull Request Review
+- Automated code review
+- Security, performance, and maintainability checks
+- Specific suggestions for improvements
+- Merge recommendations
+
+#### Auto-Merge (Experimental)
+When enabled, PRs that pass AI review can be automatically merged:
+- Requires AI approval
+- Respects branch protection rules
+- Creates formatted merge commits
+
+### API Key Security Best Practices
+
+1. **Never commit API keys to repositories**
+2. **Use environment variables** via GitHub Secrets
+3. **Set credit limits** on your OpenRouter key
+4. **Rotate keys periodically**
+5. **Monitor usage** at openrouter.ai
+
+### Disabling AI Features
+
+To disable AI features, simply don't set the `OPENROUTER_API_KEY` secret. The automation server will continue to function with manual processing.
 
 ---
 
