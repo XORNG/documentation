@@ -6,29 +6,53 @@ This document describes the automated pipeline fixing and human-in-the-loop merg
 
 The Pipeline Automation system provides:
 
-1. **Automatic Pipeline Failure Detection** - Monitors CI/CD pipeline status via GitHub webhooks
-2. **AI-Powered Failure Analysis** - Uses AI to analyze failures and suggest fixes
-3. **Self-Healing Auto-Fix** - Automatically applies fixes for common failure types
-4. **Human-in-the-Loop Merge Approval** - Requires human approval before merging
+1. **Automatic Pipeline Failure Detection** - Monitors CI/CD pipeline status via GitHub webhooks across ALL organization repositories
+2. **Multi-Repository Scanning** - Periodic scans ensure no failing PRs are missed (backup for webhooks)
+3. **AI-Powered Failure Analysis** - Uses AI to analyze failures and suggest fixes
+4. **Self-Healing Auto-Fix** - Automatically applies fixes for common failure types
+5. **Human-in-the-Loop Merge Approval** - Requires human approval before merging
 
 ## Architecture
 
+The architecture is **centralized and server-based**, monitoring ALL repositories in the organization from a single automation server:
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      GitHub Webhooks                             │
-│  (check_run, check_suite, workflow_run, issue_comment)          │
+│                     GitHub Organization                          │
+│            (All repositories across the org)                    │
 └─────────────────────────────────────────────────────────────────┘
                               │
+            ┌─────────────────┴─────────────────┐
+            ▼                                   ▼
+┌──────────────────────────┐      ┌──────────────────────────────┐
+│     GitHub Webhooks      │      │     MultiRepoScanner         │
+│ (Real-time notifications)│      │   (Periodic backup scan)     │
+│                          │      │   - Scans every 5 minutes    │
+│ Events:                  │      │   - Catches missed webhooks  │
+│ - check_run              │      │   - Startup initialization   │
+│ - check_suite            │      │                              │
+│ - workflow_run           │      │                              │
+│ - pull_request           │      │                              │
+│ - issue_comment          │      │                              │
+└──────────────────────────┘      └──────────────────────────────┘
+            │                                   │
+            └─────────────────┬─────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
+│                     Automation Server                            │
+│              (Centralized for entire organization)              │
+├─────────────────────────────────────────────────────────────────┤
 │                     Webhook Server                               │
-│              (Signature verification, event routing)            │
+│        (Signature verification, event routing)                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                  PipelineAutomation                              │
 │  (Event coordination, fix tracking, human intervention)         │
+│  - Repository locking (one PR at a time per repo)              │
+│  - Fix attempt tracking                                         │
+│  - Learning service integration                                 │
 └─────────────────────────────────────────────────────────────────┘
             │                                   │
             ▼                                   ▼
@@ -37,7 +61,48 @@ The Pipeline Automation system provides:
 │  - Status monitoring     │      │  - Command processing        │
 │  - Failure analysis      │      │  - Approval workflow         │
 │  - Auto-fix application  │      │  - Merge execution           │
+│  - AI integration        │      │                              │
 └──────────────────────────┘      └──────────────────────────────┘
+            │
+            ▼
+┌──────────────────────────┐
+│    GitHubOrgService      │
+│  - Repository discovery  │
+│  - Webhook registration  │
+│  - New repo detection    │
+└──────────────────────────┘
+```
+
+## Why Server-Based (Not GitHub Actions)?
+
+The system uses a **centralized server** instead of GitHub Actions for several important reasons:
+
+1. **Organization-Wide Coverage**: GitHub Actions `workflow_run` events are repository-scoped - they can only see workflow runs in their own repository. A centralized server can monitor ALL repositories.
+
+2. **Unified Webhook Reception**: All repositories send webhooks to one server, enabling consistent monitoring and coordination.
+
+3. **AI/Learning Integration**: The automation server integrates with AI services and learning systems that would be complex to replicate in each repository.
+
+4. **State Management**: Repository locking, queue management, and fix attempt tracking require centralized state.
+
+5. **Backup Scanning**: The `MultiRepoScanner` provides redundancy by periodically scanning for PRs that may have been missed by webhooks.
+
+## Multi-Repository Scanner
+
+The `MultiRepoScanner` ensures complete coverage by:
+
+1. **Periodic Scanning**: Every 5 minutes (configurable), scans all organization repositories
+2. **Startup Initialization**: Immediately scans on server start to catch any PRs that failed while server was down
+3. **Webhook Backup**: Catches PRs where webhooks were missed (network issues, etc.)
+4. **Efficient Processing**: Only processes PRs with actual failing checks
+
+```typescript
+// Scanner workflow
+1. List all org repositories via GitHubOrgService
+2. For each repo, list open PRs
+3. For each PR, check for failing CI checks
+4. If failing checks found, trigger PipelineAutomation.triggerPRAnalysis()
+5. Respects existing repository locks and queuing
 ```
 
 ## Self-Improvement Guidelines
@@ -57,14 +122,36 @@ To prevent merge conflicts and duplicate fixes, the system enforces a **one-PR-a
 - When a PR starts being auto-fixed, a lock is acquired for that repository
 - Other PRs with failing pipelines are **queued** and will be processed after the current PR is:
   - Merged successfully, or
-  - Has its fix completed (all checks pass)
+  - Has its fix completed (all checks pass), or
+  - Analysis determines no auto-fixable issues
 - Queued PRs are notified and processed in FIFO order
-- The lock is released when the PR is closed, merged, or all checks pass
+- The lock is released in these scenarios:
+  - PR is closed or merged
+  - All checks pass after a fix
+  - Analysis completes with no fixable issues
+  - Fix application fails
+  - Validation pre-check fails
+
+### Lock Release Events
+
+The system uses the following events to coordinate lock release and queue processing:
+
+| Event | Trigger | Lock Released | Queue Processed |
+|-------|---------|---------------|-----------------|
+| `analysis:complete` | No auto-fixable issues found | ✅ | ✅ |
+| `analysis:complete` | Validator pre-check fails | ✅ | ✅ |
+| `analysis:complete` | Auto-fix disabled | ✅ | ✅ |
+| `fix:applied` | Fix committed and pushed | ❌ (wait for CI) | ❌ |
+| `fix:failed` | Fix application error | ✅ | ✅ |
+| `fix:successful` | Pipeline passed after fix | ✅ | ✅ |
+| `pr:merged` | PR merged | ✅ | ✅ |
+| `pr:closed` | PR closed | ✅ | ✅ |
 
 This ensures:
 - Clean git history without conflicting automated commits
 - No duplicate fixes across PRs
 - Predictable fix ordering
+- Queue always gets processed, even when no fixes are possible
 
 ## Supported Failure Types
 
@@ -159,41 +246,34 @@ GITHUB_ORG=xorng-org           # GitHub organization name
 WEBHOOK_SECRET=xxx             # Webhook signature secret
 OPENROUTER_API_KEY=xxx         # OpenRouter API key for AI
 
-# Optional
-BOT_USERNAME=xorng-bot         # Bot account username
+# Optional - Pipeline Automation
+BOT_USERNAME=xorng-bot         # Bot account username (default: xorng-bot)
+PIPELINE_ENABLED=true          # Enable/disable pipeline automation (default: true)
+SCAN_INTERVAL_MS=300000        # Multi-repo scanner interval in ms (default: 5 minutes)
+
+# Optional - General
 LOG_LEVEL=info                 # Logging level
-AUTO_FIX_ENABLED=true          # Enable/disable auto-fix
-MERGE_APPROVAL_ENABLED=true    # Enable/disable merge approval
-MAX_FIX_ATTEMPTS=3             # Max auto-fix attempts per PR
+AUTO_FIX_ENABLED=true          # Enable/disable auto-fix (default: true)
+MERGE_APPROVAL_ENABLED=true    # Enable/disable merge approval (default: true)
+MAX_FIX_ATTEMPTS=3             # Max auto-fix attempts per PR (default: 3)
 ```
 
 ### GitHub Webhook Setup
 
-Configure your repository/organization webhook with these events:
+Configure your organization webhook (recommended) or per-repository webhooks with these events:
 
-- `check_run`
-- `check_suite`
-- `workflow_run`
-- `workflow_job`
-- `issue_comment`
-- `pull_request`
+**Required Events for Self-Healing Pipeline:**
+- `check_run` - Individual CI check status
+- `check_suite` - Grouped CI check status
+- `workflow_run` - GitHub Actions workflow status
+- `pull_request` - PR lifecycle events
+- `issue_comment` - Commands like `/autofix`, `/approve`, `/merge`
+- `pull_request_review` - Review status
 
-### GitHub Workflow
+**Additional Events (for issue processing):**
+- `issues` - Issue lifecycle events
 
-The `self-healing.yml` workflow provides additional automation:
-
-```yaml
-on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-```
-
-This workflow:
-1. Triggers when CI completes
-2. Analyzes failure logs
-3. Applies simple fixes (lint/format)
-4. Posts status comments on PRs
+The automation server will automatically register webhooks for all repositories when `WEBHOOK_URL` is configured.
 
 ## API Endpoints
 
@@ -239,20 +319,34 @@ The `PipelineAutomation` class emits these events for external monitoring:
 |-------|-------------|
 | `fix:applied` | Auto-fix was successfully applied |
 | `fix:failed` | Auto-fix attempt failed |
+| `fix:successful` | Auto-fix resulted in passing CI |
 | `pipeline:passed` | All pipeline checks passed |
 | `pipeline:failed` | Pipeline checks failed |
 | `merge:approved` | PR was approved for merge |
 | `merge:completed` | PR was successfully merged |
 | `merge:ready` | PR is ready for merge (all checks passing) |
 | `intervention:requested` | Human intervention is required |
+| `scanner:pr-analyzed` | Scanner triggered analysis for a PR |
+
+The `MultiRepoScanner` class emits these events:
+
+| Event | Description |
+|-------|-------------|
+| `scan:started` | Periodic scan has begun |
+| `scan:completed` | Scan finished with results |
+| `scan:error` | Scan encountered an error |
+| `pr:found` | Found a PR with failing checks |
+| `pr:processed` | Finished processing a failing PR |
 
 ## Example Usage
 
 ```typescript
 import { 
   PipelineAutomation, 
+  MultiRepoScanner,
   WebhookServer, 
-  AIService 
+  AIService,
+  GitHubOrgService 
 } from './server/index.js';
 
 // Initialize services
@@ -263,6 +357,11 @@ const webhookServer = new WebhookServer({
 
 const aiService = await AIService.create({
   apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+const githubOrgService = new GitHubOrgService({
+  token: process.env.GITHUB_TOKEN,
+  organization: process.env.GITHUB_ORG,
 });
 
 // Create pipeline automation
@@ -276,6 +375,16 @@ const automation = new PipelineAutomation({
   enableMergeApproval: true,
 });
 
+// Create multi-repo scanner for comprehensive coverage
+const scanner = new MultiRepoScanner({
+  token: process.env.GITHUB_TOKEN,
+  organization: process.env.GITHUB_ORG,
+  githubOrgService,
+  pipelineAutomation: automation,
+  scanIntervalMs: 5 * 60 * 1000, // 5 minutes
+  enablePeriodicScan: true,
+});
+
 // Listen for events
 automation.on('fix:applied', (data) => {
   console.log(`Fix applied to PR #${data.prNumber}`);
@@ -285,8 +394,13 @@ automation.on('merge:ready', (data) => {
   console.log(`PR #${data.prNumber} is ready for merge`);
 });
 
-// Start server
+scanner.on('scan:completed', (result) => {
+  console.log(`Scanned ${result.reposScanned} repos, found ${result.failingPRs} failing PRs`);
+});
+
+// Start services
 await webhookServer.start();
+scanner.start(); // Begins periodic scanning
 ```
 
 ## Troubleshooting
