@@ -251,12 +251,56 @@ BOT_USERNAME=xorng-bot         # Bot account username (default: xorng-bot)
 PIPELINE_ENABLED=true          # Enable/disable pipeline automation (default: true)
 SCAN_INTERVAL_MS=300000        # Multi-repo scanner interval in ms (default: 5 minutes)
 
+# Optional - AI Service Retry Configuration
+AI_MAX_RETRIES=3               # Max retry attempts for rate-limited requests (default: 3)
+AI_RETRY_DELAY_MS=5000         # Initial delay before first retry in ms (default: 5000)
+AI_MAX_RETRY_DELAY_MS=120000   # Maximum delay between retries in ms (default: 120000 = 2 min)
+
+# Optional - AI Model Configuration
+OPENROUTER_MODEL=mistralai/devstral-2512:free  # Primary model (default: mistralai/devstral-2512:free - FREE)
+AI_FALLBACK_MODELS=xiaomi/mimo-v2-flash:free,kwaipilot/kat-coder-pro:free,tngtech/deepseek-r1t2-chimera:free
+# Comma-separated list of fallback models. OpenRouter will automatically try the next model
+# if the primary model fails (provider issues, rate limits, etc.)
+# All defaults are FREE models ($0/token) - no cost for primary or fallbacks
+
 # Optional - General
 LOG_LEVEL=info                 # Logging level
 AUTO_FIX_ENABLED=true          # Enable/disable auto-fix (default: true)
 MERGE_APPROVAL_ENABLED=true    # Enable/disable merge approval (default: true)
 MAX_FIX_ATTEMPTS=3             # Max auto-fix attempts per PR (default: 3)
 ```
+
+### AI Service Model Fallback
+
+OpenRouter's `models` array feature enables automatic failover when the primary model fails. The AI service now supports:
+
+- **Automatic Fallback**: When the primary model returns a 5xx error or is unavailable, OpenRouter automatically tries the next model in the array
+- **Provider Routing**: Uses OpenRouter's `route: 'fallback'` setting to route around degraded providers (<95% uptime)
+- **Custom Fallback Models**: Configure via `AI_FALLBACK_MODELS` env var (comma-separated)
+- **Default Fallbacks**: If not configured, uses FREE built-in fallbacks:
+  - `xiaomi/mimo-v2-flash:free` - MiMo-V2 MoE model, #1 on SWE-bench (256K context)
+  - `kwaipilot/kat-coder-pro:free` - KAT-Coder-Pro, optimized for coding tasks
+  - `tngtech/deepseek-r1t2-chimera:free` - DeepSeek R1T2 Chimera, strong reasoning
+  - `nvidia/nemotron-3-nano-30b-a3b:free` - NVIDIA Nemotron, efficient agentic AI
+
+This addresses upstream provider failures (500 errors) without requiring local retry logic for model-level issues.
+
+### AI Service Retry Logic
+
+The AI service automatically retries failed requests with exponential backoff:
+
+| Error Type | Retryable | Behavior |
+|------------|-----------|----------|
+| 429 Rate Limit | ✅ | Waits for rate limit reset time (from headers) or uses exponential backoff |
+| 5xx Server Error | ✅ | Exponential backoff with jitter + automatic model fallback |
+| Network Error | ✅ | Exponential backoff with jitter |
+| 4xx Client Error (except 429) | ❌ | Fails immediately |
+| Invalid Response | ❌ | Fails immediately |
+
+**Retry Delays:**
+- Default: 5s → 10s → 20s (exponential)
+- With rate limit header: Uses `X-RateLimit-Reset` timestamp + 1s buffer
+- Maximum delay: 2 minutes (configurable)
 
 ### GitHub Webhook Setup
 
